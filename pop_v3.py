@@ -15,7 +15,7 @@ class NOXPopup:
     def load_api_key(self):
         """Load API key from api_key.txt"""
         try:
-            with open('api_key.txt', 'r') as f:
+            with open('../api_key.txt', 'r') as f:
                 self.api_key = f.read().strip()
                 openai.api_key = self.api_key
                 self.add_to_chat("NOX: API key loaded successfully!")
