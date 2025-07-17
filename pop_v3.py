@@ -239,28 +239,154 @@ class NOXPopup:
             self.add_to_chat(f"NOX: Error loading API key: {e}")
             self.api_key = None
         
-    def setup_window(self):
-        """Configure the main window with clean, modern styling"""
-        self.root.title("NOX Mini Assistant")
-        self.root.geometry("500x600")
-        self.root.resizable(False, False)
-        
-        # Modern color scheme
+    def setup_styles(self):
+        """Define the color palette and font styles for the UI."""
         self.colors = {
-            'bg': '#1a1a1a',
-            'surface': '#2d2d2d', 
-            'primary': '#007acc',
-            'text': '#ffffff',
-            'text_secondary': '#b0b0b0',
-            'accent': '#4a9eff'
+            'bg': '#f0f2f5',          # A soft, light gray (like Google's backgrounds)
+            'surface': '#ffffff',      # Pure white for the chat and input areas
+            'primary': '#1a73e8',      # Google's signature blue for primary actions
+            'primary_active': '#1669c9',# A slightly darker blue for when a button is pressed
+            'text_primary': '#202124', # Dark gray for primary text (more readable than black)
+            'text_secondary': '#5f6368',# Lighter gray for secondary info like the cost label
+            'border': '#dfe1e5'        # A subtle border for the input field
         }
-        
+
+        self.fonts = {
+            'title': ('Segoe UI', 16, 'bold'),
+            'body': ('Segoe UI', 10),
+            'button': ('Segoe UI', 10, 'bold'),
+            'label': ('Segoe UI', 9)
+        }
+
+    def setup_window(self):
+        """Configure the main window with a clean, modern style."""
+        self.setup_styles() # Initialize styles first
+
+        self.root.title("NOX Assistant")
+        self.root.geometry("450x650") # Adjusted for better proportions
+        self.root.resizable(False, False)
         self.root.configure(bg=self.colors['bg'])
-        
+
         # Always on top and centered
         self.root.attributes('-topmost', True)
         self.center_window()
-        
+
+    def setup_ui(self):
+        """Create the main UI components with a Google/Anthropic-inspired design."""
+        # Main container with generous padding
+        main_frame = tk.Frame(self.root, bg=self.colors['bg'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # --- Header ---
+        header_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        header_frame.pack(fill=tk.X, pady=(0, 15))
+
+        title_label = tk.Label(
+            header_frame,
+            text="/Kracken",
+            bg=self.colors['bg'],
+            fg=self.colors['text_primary'],
+            font=self.fonts['title']
+        )
+        title_label.pack(side=tk.LEFT)
+
+        self.cost_label = tk.Label(
+            header_frame,
+            text="Cost: $0.00",
+            bg=self.colors['bg'],
+            fg=self.colors['text_secondary'],
+            font=self.fonts['label']
+        )
+        self.cost_label.pack(side=tk.RIGHT, pady=(5,0)) # Align better with title
+
+        # --- Chat History ---
+        # Frame to hold the chat history and give it a border
+        chat_frame = tk.Frame(
+            main_frame,
+            bg=self.colors['border'],
+            bd=1 # Border width
+        )
+        chat_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.chat_history = scrolledtext.ScrolledText(
+            chat_frame,
+            wrap=tk.WORD,
+            bg=self.colors['surface'],
+            fg=self.colors['text_primary'],
+            font=self.fonts['body'],
+            padx=10, # Padding inside the text area
+            pady=10,
+            bd=0, # No internal border
+            highlightthickness=0 # Remove focus border
+        )
+        self.chat_history.pack(fill=tk.BOTH, expand=True)
+
+        # --- Input Frame ---
+        input_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        input_frame.pack(fill=tk.X, pady=(15, 0))
+
+        # We'll use a standard Entry widget for a single-line, clean look
+        self.chat_input = tk.Text(
+            input_frame,
+            height=4, # Start with a reasonable height
+            bg=self.colors['surface'],
+            fg=self.colors['text_primary'],
+            font=self.fonts['body'],
+            padx=10,
+            pady=10,
+            bd=1,
+            relief=tk.SOLID, # A solid, thin border
+            highlightbackground=self.colors['border'],
+            highlightcolor=self.colors['primary'],
+            highlightthickness=1
+        )
+        self.chat_input.pack(fill=tk.X, expand=True)
+        self.chat_input.bind('<Return>', self.handle_enter)
+        self.chat_input.bind('<Control-Return>', lambda e: self.chat_input.insert(tk.INSERT, '\n'))
+
+
+        # --- Button Frame ---
+        button_frame = tk.Frame(main_frame, bg=self.colors['bg'])
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+
+        # Move close button to be less prominent
+        close_button = tk.Button(
+            button_frame,
+            text="Close",
+            command=self.close_window,
+            bg=self.colors['bg'],
+            fg=self.colors['text_secondary'],
+            font=self.fonts['button'],
+            relief=tk.FLAT, # No border, feels more like a link
+            activeforeground=self.colors['text_primary']
+        )
+        close_button.pack(side=tk.LEFT)
+
+        self.send_button = tk.Button(
+            button_frame,
+            text="Send",
+            command=self.send_message,
+            bg=self.colors['primary'],
+            fg=self.colors['surface'],
+            font=self.fonts['button'],
+            relief=tk.FLAT,
+            padx=25,
+            pady=5,
+            activebackground=self.colors['primary_active'],
+            activeforeground=self.colors['surface']
+        )
+        self.send_button.pack(side=tk.RIGHT)
+
+    def handle_enter(self, event):
+        """Handle Enter key - send message unless Ctrl+Enter."""
+        if event.state & 0x4:  # Check if Ctrl key is pressed
+            self.chat_input.insert(tk.INSERT, '\n')
+            return "break" # Prevent the default newline and our send action
+        else:
+            self.send_message()
+            return "break"  # Prevent the default newline action
+
+
     def center_window(self):
         """Center the window on screen"""
         self.root.update_idletasks()
@@ -269,94 +395,6 @@ class NOXPopup:
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
-        
-    def setup_ui(self):
-        """Create the main UI components"""
-        # Main container
-        main_frame = tk.Frame(self.root, bg=self.colors['bg'])
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Header
-        header_frame = tk.Frame(main_frame, bg=self.colors['bg'])
-        header_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        title_label = tk.Label(
-            header_frame, 
-            text="NOX Mini", 
-            bg=self.colors['bg'], 
-            fg=self.colors['text'], 
-            font=('Segoe UI', 16, 'bold')
-        )
-        title_label.pack(side=tk.LEFT)
-        
-        # Cost display
-        self.cost_label = tk.Label(
-            header_frame, 
-            text="Cost: $0.00", 
-            bg=self.colors['bg'], 
-            fg=self.colors['text_secondary'], 
-            font=('Segoe UI', 10)
-        )
-        self.cost_label.pack(side=tk.RIGHT)
-        
-        # Chat history
-        self.chat_history = scrolledtext.ScrolledText(
-            main_frame, 
-            wrap=tk.WORD, 
-            height=20,
-            bg=self.colors['surface'],
-            fg=self.colors['text'],
-            insertbackground=self.colors['text'],
-            font=('Segoe UI', 10)
-        )
-        self.chat_history.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # Input frame
-        input_frame = tk.Frame(main_frame, bg=self.colors['bg'])
-        input_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Chat input
-        self.chat_input = tk.Text(
-            input_frame, 
-            height=3,
-            bg=self.colors['surface'],
-            fg=self.colors['text'],
-            insertbackground=self.colors['text'],
-            font=('Segoe UI', 10)
-        )
-        self.chat_input.pack(fill=tk.X, side=tk.LEFT, padx=(0, 10))
-        
-        # Send button
-        self.send_button = tk.Button(
-            input_frame, 
-            text="Send", 
-            command=self.send_message,
-            bg=self.colors['primary'],
-            fg=self.colors['text'],
-            font=('Segoe UI', 10),
-            relief=tk.FLAT,
-            padx=20
-        )
-        self.send_button.pack(side=tk.RIGHT)
-        
-        # Bind Enter key (Ctrl+Enter for new line)
-        self.chat_input.bind('<Return>', self.handle_enter)
-        
-        # Bottom controls
-        bottom_frame = tk.Frame(self.root, bg=self.colors['bg'])
-        bottom_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        close_button = tk.Button(
-            bottom_frame, 
-            text="Close", 
-            command=self.close_window,
-            bg=self.colors['surface'],
-            fg=self.colors['text'],
-            font=('Segoe UI', 10),
-            relief=tk.FLAT,
-            padx=20
-        )
-        close_button.pack(side=tk.RIGHT)
         
     def handle_enter(self, event):
         """Handle Enter key - send message unless Ctrl+Enter"""
