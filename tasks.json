@@ -6,8 +6,19 @@
     "timeline": "tonight",
     "priority": "high",
     "notes": "Include agenda items and any necessary documentation.",
-    "completed": false,
+    "completed": true,
     "created_at": "2025-07-17T14:58:35.373202",
+    "completed_at": "2025-07-17T15:08:22.764491"
+  },
+  {
+    "id": "943950dc-4007-40b3-9b1f-5f03536f7884",
+    "title": "Enhance UI Design",
+    "description": "Make the user interface of the app visually appealing and user-friendly.",
+    "timeline": "next week",
+    "priority": "high",
+    "notes": "Consider modern design trends and user feedback.",
+    "completed": false,
+    "created_at": "2025-07-17T15:09:06.330587",
     "completed_at": null
   }
 ]

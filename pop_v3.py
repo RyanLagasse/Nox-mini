@@ -64,20 +64,43 @@ class NOXPopup:
         else:
             raise Exception("Failed to save task to file")
     
-    def complete_task_in_json(self, task_id: str) -> bool:
-        """Mark a task as completed in the JSON file"""
+    def complete_task_in_json(self, task_identifier: str) -> bool:
+        """Mark a task as completed in the JSON file. Accepts UUID, title, or index."""
         tasks = self.load_tasks()
+        task_to_complete = None
         
+        # Try to find task by UUID first
         for task in tasks:
-            if task["id"] == task_id:
-                task["completed"] = True
-                task["completed_at"] = datetime.now().isoformat()
-                return self.save_tasks(tasks)
+            if task["id"] == task_identifier and not task["completed"]:
+                task_to_complete = task
+                break
+        
+        # If not found by UUID, try by title (partial match, case insensitive)
+        if not task_to_complete:
+            for task in tasks:
+                if not task["completed"] and task_identifier.lower() in task["title"].lower():
+                    task_to_complete = task
+                    break
+        
+        # If still not found, try by index (1-based)
+        if not task_to_complete:
+            try:
+                index = int(task_identifier) - 1  # Convert to 0-based
+                active_tasks = [t for t in tasks if not t["completed"]]
+                if 0 <= index < len(active_tasks):
+                    task_to_complete = active_tasks[index]
+            except ValueError:
+                pass
+        
+        if task_to_complete:
+            task_to_complete["completed"] = True
+            task_to_complete["completed_at"] = datetime.now().isoformat()
+            return self.save_tasks(tasks)
         
         return False
     
     def get_tasks_summary(self) -> str:
-        """Get a formatted summary of current tasks"""
+        """Get a formatted summary of current tasks with IDs for GPT"""
         tasks = self.load_tasks()
         
         if not tasks:
@@ -90,12 +113,13 @@ class NOXPopup:
         for i, task in enumerate(active_tasks, 1):
             priority_indicator = "🔴" if task["priority"] == "high" else "🟡" if task["priority"] == "medium" else "🟢"
             timeline_str = f" | Due: {task['timeline']}" if task["timeline"] else ""
-            summary += f"{i}. {priority_indicator} {task['title']}{timeline_str}\n"
+            # Include both display number and actual ID for GPT
+            summary += f"{i}. {priority_indicator} {task['title']}{timeline_str} [ID: {task['id']}]\n"
         
         if completed_tasks:
             summary += f"\nCompleted Tasks ({len(completed_tasks)}):\n"
             for i, task in enumerate(completed_tasks[-3:], 1):  # Show last 3 completed
-                summary += f"{i}. ✅ {task['title']}\n"
+                summary += f"{i}. ✅ {task['title']} [ID: {task['id']}]\n"
         
         return summary
         
@@ -144,16 +168,16 @@ class NOXPopup:
             },
             {
                 "name": "complete_task",
-                "description": "Mark a task as completed",
+                "description": "Mark a task as completed. Can accept task ID, task title (partial match), or task number from the list.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "task_id": {
+                        "task_identifier": {
                             "type": "string",
-                            "description": "The unique ID of the task to complete"
+                            "description": "The task to complete. Can be: UUID, partial title match, or number from active task list (e.g., '1', '2')"
                         }
                     },
-                    "required": ["task_id"]
+                    "required": ["task_identifier"]
                 }
             }
         ]
@@ -176,11 +200,24 @@ class NOXPopup:
                 return {"success": True, "tasks": tasks, "summary": self.get_tasks_summary()}
             
             elif function_name == "complete_task":
-                task_id = arguments.get("task_id")
-                if self.complete_task_in_json(task_id):
-                    return {"success": True, "message": f"Task {task_id} marked as completed"}
+                task_identifier = arguments.get("task_identifier", arguments.get("task_id", ""))
+                if self.complete_task_in_json(task_identifier):
+                    # Find the completed task for better feedback
+                    tasks = self.load_tasks()
+                    completed_task = None
+                    for task in tasks:
+                        if (task["id"] == task_identifier or 
+                            task_identifier.lower() in task["title"].lower() or
+                            task["completed"] and task["completed_at"]):
+                            completed_task = task
+                            break
+                    
+                    if completed_task:
+                        return {"success": True, "message": f"Task '{completed_task['title']}' marked as completed"}
+                    else:
+                        return {"success": True, "message": f"Task completed successfully"}
                 else:
-                    return {"success": False, "message": f"Task {task_id} not found"}
+                    return {"success": False, "message": f"Could not find active task matching '{task_identifier}'. Check task ID, title, or number."}
             
             else:
                 return {"success": False, "message": f"Unknown function: {function_name}"}
