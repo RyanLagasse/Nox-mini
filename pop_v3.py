@@ -15,7 +15,7 @@ class NOXPopup:
     def load_api_key(self):
         """Load API key from api_key.txt"""
         try:
-            with open('../api_key.txt', 'r') as f:
+            with open('api_key.txt', 'r') as f:
                 self.api_key = f.read().strip()
                 openai.api_key = self.api_key
                 self.add_to_chat("NOX: API key loaded successfully!")
@@ -166,6 +166,9 @@ class NOXPopup:
         self.add_to_chat(f"You: {message}")
         self.chat_input.delete(1.0, tk.END)
         
+        # Show loading message
+        self.add_to_chat("NOX: Thinking...")
+        
         # Disable send button during processing
         self.send_button.config(state=tk.DISABLED, text="Thinking...")
         
@@ -189,13 +192,12 @@ class NOXPopup:
             
             reply = response.choices[0].message.content
             
-            # Calculate cost (rough estimate for gpt-4o-mini)
+            # Calculate cost (GPT-4o-mini pricing: $0.15 per 1M input tokens, $0.6 per 1M output tokens)
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
             
-            # GPT-4o-mini pricing (approximate)
-            input_cost = input_tokens * 0.00015 / 1000  # $0.15 per 1K tokens
-            output_cost = output_tokens * 0.0006 / 1000  # $0.6 per 1K tokens
+            input_cost = input_tokens * 0.00000015  # $0.15 per 1M tokens
+            output_cost = output_tokens * 0.0000006  # $0.6 per 1M tokens
             total_cost = input_cost + output_cost
             
             self.total_cost += total_cost
@@ -208,12 +210,28 @@ class NOXPopup:
             
     def handle_gpt_response(self, reply):
         """Handle GPT response in main thread"""
+        # Remove the "Thinking..." message
+        content = self.chat_history.get(1.0, tk.END)
+        if "NOX: Thinking..." in content:
+            lines = content.split('\n')
+            filtered_lines = [line for line in lines if line.strip() != "NOX: Thinking..."]
+            self.chat_history.delete(1.0, tk.END)
+            self.chat_history.insert(1.0, '\n'.join(filtered_lines))
+        
         self.add_to_chat(f"NOX: {reply}")
-        self.cost_label.config(text=f"Cost: ${self.total_cost:.4f}")
+        self.cost_label.config(text=f"Cost: ${self.total_cost:.6f}")
         self.send_button.config(state=tk.NORMAL, text="Send")
         
     def handle_gpt_error(self, error):
         """Handle GPT error in main thread"""
+        # Remove the "Thinking..." message
+        content = self.chat_history.get(1.0, tk.END)
+        if "NOX: Thinking..." in content:
+            lines = content.split('\n')
+            filtered_lines = [line for line in lines if line.strip() != "NOX: Thinking..."]
+            self.chat_history.delete(1.0, tk.END)
+            self.chat_history.insert(1.0, '\n'.join(filtered_lines))
+        
         self.add_to_chat(f"NOX: Error - {error}")
         self.send_button.config(state=tk.NORMAL, text="Send")
         
