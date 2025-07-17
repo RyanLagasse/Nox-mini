@@ -3,6 +3,10 @@ from tkinter import ttk, scrolledtext, messagebox
 import openai
 import threading
 import os
+import json
+import uuid
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
 
 class NOXPopup:
     def __init__(self):
@@ -11,6 +15,178 @@ class NOXPopup:
         self.setup_ui()
         self.load_api_key()
         self.total_cost = 0.00
+        self.tasks_file = "tasks.json"
+        self.initialize_tasks_file()
+        
+    def initialize_tasks_file(self):
+        """Initialize tasks JSON file if it doesn't exist"""
+        if not os.path.exists(self.tasks_file):
+            self.save_tasks([])
+            
+    def load_tasks(self) -> List[Dict[str, Any]]:
+        """Load tasks from JSON file"""
+        try:
+            with open(self.tasks_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Error loading tasks: {e}")
+            return []
+    
+    def save_tasks(self, tasks: List[Dict[str, Any]]) -> bool:
+        """Save tasks to JSON file"""
+        try:
+            with open(self.tasks_file, 'w', encoding='utf-8') as f:
+                json.dump(tasks, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"Error saving tasks: {e}")
+            return False
+    
+    def add_task_to_json(self, title: str, description: str = "", timeline: str = "", priority: str = "medium", notes: str = "") -> Dict[str, Any]:
+        """Add a new task to the JSON file"""
+        task = {
+            "id": str(uuid.uuid4()),
+            "title": title.strip(),
+            "description": description.strip(),
+            "timeline": timeline.strip(),
+            "priority": priority.lower(),
+            "notes": notes.strip(),
+            "completed": False,
+            "created_at": datetime.now().isoformat(),
+            "completed_at": None
+        }
+        
+        tasks = self.load_tasks()
+        tasks.append(task)
+        
+        if self.save_tasks(tasks):
+            return task
+        else:
+            raise Exception("Failed to save task to file")
+    
+    def complete_task_in_json(self, task_id: str) -> bool:
+        """Mark a task as completed in the JSON file"""
+        tasks = self.load_tasks()
+        
+        for task in tasks:
+            if task["id"] == task_id:
+                task["completed"] = True
+                task["completed_at"] = datetime.now().isoformat()
+                return self.save_tasks(tasks)
+        
+        return False
+    
+    def get_tasks_summary(self) -> str:
+        """Get a formatted summary of current tasks"""
+        tasks = self.load_tasks()
+        
+        if not tasks:
+            return "No tasks found."
+        
+        active_tasks = [t for t in tasks if not t["completed"]]
+        completed_tasks = [t for t in tasks if t["completed"]]
+        
+        summary = f"Active Tasks ({len(active_tasks)}):\n"
+        for i, task in enumerate(active_tasks, 1):
+            priority_indicator = "🔴" if task["priority"] == "high" else "🟡" if task["priority"] == "medium" else "🟢"
+            timeline_str = f" | Due: {task['timeline']}" if task["timeline"] else ""
+            summary += f"{i}. {priority_indicator} {task['title']}{timeline_str}\n"
+        
+        if completed_tasks:
+            summary += f"\nCompleted Tasks ({len(completed_tasks)}):\n"
+            for i, task in enumerate(completed_tasks[-3:], 1):  # Show last 3 completed
+                summary += f"{i}. ✅ {task['title']}\n"
+        
+        return summary
+        
+    def get_function_definitions(self) -> List[Dict[str, Any]]:
+        """Define functions that GPT can call for task management"""
+        return [
+            {
+                "name": "add_task",
+                "description": "Add a new task to the user's task list",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "The main title/name of the task"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed description of what needs to be done"
+                        },
+                        "timeline": {
+                            "type": "string",
+                            "description": "When this should be done (e.g., 'today', 'next week', '2024-01-15')"
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "description": "Priority level of the task"
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Additional notes or context about the task"
+                        }
+                    },
+                    "required": ["title"]
+                }
+            },
+            {
+                "name": "get_tasks",
+                "description": "Get the current list of tasks",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "complete_task",
+                "description": "Mark a task as completed",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {
+                            "type": "string",
+                            "description": "The unique ID of the task to complete"
+                        }
+                    },
+                    "required": ["task_id"]
+                }
+            }
+        ]
+    
+    def execute_function_call(self, function_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a function call from GPT"""
+        try:
+            if function_name == "add_task":
+                task = self.add_task_to_json(
+                    title=arguments.get("title", ""),
+                    description=arguments.get("description", ""),
+                    timeline=arguments.get("timeline", ""),
+                    priority=arguments.get("priority", "medium"),
+                    notes=arguments.get("notes", "")
+                )
+                return {"success": True, "task": task, "message": f"Task '{task['title']}' added successfully"}
+            
+            elif function_name == "get_tasks":
+                tasks = self.load_tasks()
+                return {"success": True, "tasks": tasks, "summary": self.get_tasks_summary()}
+            
+            elif function_name == "complete_task":
+                task_id = arguments.get("task_id")
+                if self.complete_task_in_json(task_id):
+                    return {"success": True, "message": f"Task {task_id} marked as completed"}
+                else:
+                    return {"success": False, "message": f"Task {task_id} not found"}
+            
+            else:
+                return {"success": False, "message": f"Unknown function: {function_name}"}
+                
+        except Exception as e:
+            return {"success": False, "message": f"Error executing {function_name}: {str(e)}"}
         
     def load_api_key(self):
         """Load API key from api_key.txt"""
@@ -176,39 +352,96 @@ class NOXPopup:
         threading.Thread(target=self.get_gpt_response, args=(message,), daemon=True).start()
         
     def get_gpt_response(self, message):
-        """Get response from GPT-4o Mini"""
+        """Get response from GPT-4o Mini with function calling support"""
         try:
             client = openai.OpenAI(api_key=self.api_key)
             
+            # Get current tasks for context
+            current_tasks = self.get_tasks_summary()
+            
+            system_prompt = f"""You are NOX, a helpful personal assistant. You can manage tasks for the user.
+
+Current tasks:
+{current_tasks}
+
+You have access to task management functions. Use them when:
+- User asks to add a task or mentions something they need to do
+- User asks about their current tasks
+- User wants to mark something as complete
+- User asks you to break down a complex task into smaller ones
+
+Keep responses concise and helpful. When you use functions, explain what you did."""
+
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are NOX, a helpful personal assistant. Keep responses concise and helpful."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message}
                 ],
+                tools=[{"type": "function", "function": func} for func in self.get_function_definitions()],
+                tool_choice="auto",
                 max_tokens=500,
                 temperature=0.7
             )
             
-            reply = response.choices[0].message.content
+            # Handle tool calls (modern API)
+            response_message = response.choices[0].message
+            function_results = []
+            
+            if response_message.tool_calls:
+                # Execute the function call
+                tool_call = response_message.tool_calls[0]  # Handle first tool call
+                function_name = tool_call.function.name
+                
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError as e:
+                    self.root.after(0, lambda: self.handle_gpt_error(f"Invalid function arguments: {e}"))
+                    return
+                
+                result = self.execute_function_call(function_name, function_args)
+                function_results.append(result)
+                
+                # Get a follow-up response that incorporates the function result
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": response_message.content, "tool_calls": response_message.tool_calls},
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(result)}
+                ]
+                
+                follow_up = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=300,
+                    temperature=0.7
+                )
+                
+                final_reply = follow_up.choices[0].message.content
+                
+                # Calculate total cost for both calls
+                total_input_tokens = response.usage.prompt_tokens + follow_up.usage.prompt_tokens
+                total_output_tokens = response.usage.completion_tokens + follow_up.usage.completion_tokens
+                
+            else:
+                final_reply = response_message.content
+                total_input_tokens = response.usage.prompt_tokens
+                total_output_tokens = response.usage.completion_tokens
             
             # Calculate cost (GPT-4o-mini pricing: $0.15 per 1M input tokens, $0.6 per 1M output tokens)
-            input_tokens = response.usage.prompt_tokens
-            output_tokens = response.usage.completion_tokens
-            
-            input_cost = input_tokens * 0.00000015  # $0.15 per 1M tokens
-            output_cost = output_tokens * 0.0000006  # $0.6 per 1M tokens
+            input_cost = total_input_tokens * 0.00000015
+            output_cost = total_output_tokens * 0.0000006
             total_cost = input_cost + output_cost
             
             self.total_cost += total_cost
             
             # Update UI in main thread
-            self.root.after(0, self.handle_gpt_response, reply)
+            self.root.after(0, lambda: self.handle_gpt_response(final_reply, function_results))
             
         except Exception as e:
             self.root.after(0, self.handle_gpt_error, str(e))
             
-    def handle_gpt_response(self, reply):
+    def handle_gpt_response(self, reply, function_results=None):
         """Handle GPT response in main thread"""
         # Remove the "Thinking..." message
         content = self.chat_history.get(1.0, tk.END)
@@ -219,6 +452,15 @@ class NOXPopup:
             self.chat_history.insert(1.0, '\n'.join(filtered_lines))
         
         self.add_to_chat(f"NOX: {reply}")
+        
+        # If there were function calls, add debug info
+        if function_results:
+            for result in function_results:
+                if result.get("success"):
+                    self.add_to_chat(f"[DEBUG] Function executed successfully: {result.get('message', 'No message')}")
+                else:
+                    self.add_to_chat(f"[DEBUG] Function failed: {result.get('message', 'Unknown error')}")
+        
         self.cost_label.config(text=f"Cost: ${self.total_cost:.6f}")
         self.send_button.config(state=tk.NORMAL, text="Send")
         
